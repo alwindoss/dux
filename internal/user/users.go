@@ -6,21 +6,22 @@ import (
 	"log"
 	"strings"
 
-	"github.com/dgraph-io/badger/v4"
+	"go.etcd.io/bbolt"
 )
 
 type Manager struct {
-	db *badger.DB
+	db     *bbolt.DB
+	bucket []byte
 }
 
 func (m *Manager) Save(u *User) error {
-
-	err := m.db.Update(func(txn *badger.Txn) error {
+	err := m.db.Update(func(tx *bbolt.Tx) error {
+		buck := tx.Bucket(m.bucket)
 		key := []byte(u.Name)
 		var valueBuff bytes.Buffer
 		gob.NewEncoder(&valueBuff).Encode(u)
 		value := valueBuff.Bytes()
-		err := txn.Set(key, value)
+		err := buck.Put(key, value)
 		if err != nil {
 			return err
 		}
@@ -29,8 +30,7 @@ func (m *Manager) Save(u *User) error {
 	if err != nil {
 		log.Printf("error saving user data with %s", u.ID)
 	}
-
-	// log.Printf("saved user data with %s successfully", u.ID)
+	log.Printf("saved user data with name %s successfully", u.Name)
 	return nil
 }
 
@@ -44,14 +44,11 @@ func (m *Manager) FetchAll() ([]*User, error) {
 
 func (m *Manager) Query(q string) ([]string, error) {
 	userList := []string{}
-	err := m.db.View(func(txn *badger.Txn) error {
-		opts := badger.DefaultIteratorOptions
-		opts.PrefetchSize = 10
-		it := txn.NewIterator(opts)
-		defer it.Close()
-		for it.Rewind(); it.Valid(); it.Next() {
-			item := it.Item()
-			k := item.Key()
+
+	err := m.db.View(func(tx *bbolt.Tx) error {
+		buck := tx.Bucket(m.bucket)
+		c := buck.Cursor()
+		for k, _ := c.First(); k != nil; k, _ = c.Next() {
 			name := string(k)
 			if strings.Contains(name, q) {
 				userList = append(userList, name)
@@ -66,10 +63,19 @@ func (m *Manager) Query(q string) ([]string, error) {
 	return userList, nil
 }
 
-func New(db *badger.DB) *Manager {
+func New(db *bbolt.DB) *Manager {
+
 	m := &Manager{
-		db: db,
+		db:     db,
+		bucket: []byte("users_bucket"),
 	}
+	db.Update(func(tx *bbolt.Tx) error {
+		_, err := tx.CreateBucketIfNotExists(m.bucket)
+		if err != nil {
+			return err
+		}
+		return nil
+	})
 	return m
 }
 

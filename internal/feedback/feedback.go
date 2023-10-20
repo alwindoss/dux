@@ -1,9 +1,11 @@
 package feedback
 
-import "github.com/dgraph-io/badger/v4"
+import (
+	"go.etcd.io/bbolt"
+)
 
 type Manager struct {
-	db *badger.DB
+	db *bbolt.DB
 }
 
 func (m *Manager) Save(f *Feedback) error {
@@ -18,7 +20,7 @@ func (m *Manager) FetchAll() ([]*Feedback, error) {
 	return nil, nil
 }
 
-func New(db *badger.DB) *Manager {
+func New(db *bbolt.DB) *Manager {
 	return &Manager{
 		db: db,
 	}
